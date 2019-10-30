@@ -103,7 +103,7 @@ export default class App extends Component {
     return (<div>
       <div className="tc">
       <h5> </h5>
-      <img src="./clinaLogo.jpg" height="70" ></img>
+      <img src="./sampleLogo.jpg" height="70" ></img>
       <h5> </h5>
       </div>
       <div className="tc">
