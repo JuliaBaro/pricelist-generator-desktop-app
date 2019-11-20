@@ -1,10 +1,11 @@
 var Excel = require("exceljs");
 
-//Global variables
+//Global variables:
 let mainColumnArr;
 let mainRowArr;
 let readWorksheet;
 let idsArrFSB_SB = [];
+var errorList=[];
 
 let codeStart1 = "FSB.20.";
 let codeStart2 = "SB.20.";
@@ -21,45 +22,55 @@ let sum = [];
 let unitPriceArr = [];
 let fullPriceArr = [];
 let arrOfProjectColumns = [];
+var flawHappened=0;
+
+function Init()
+{
+    flawHappened=0;
+    idsArrFSB_SB = [];
+    errorList=[];
+    idsAndQuantityArr = [];    
+    arrOfAllElements = [];
+    sum = [];    
+    unitPriceArr = [];
+    fullPriceArr = [];
+    arrOfProjectColumns = [];
+}
 
 //Checks id-s
 function checkId(productid)
 {
     if (productid.match(/^[F]?SB.([0-9]{2}).([0-9]{4}).([0-9]{4}).([0-9]{2})$/))
     {
-        //console.log("true");
         return true;
     }
     else
     {
-        //console.log("Erno .catch");
         return false;
     }
 }
 
-//Checks cell type if it is string or number
-/*function checkCellType(FSB_SB, project)
+//Checks if a cells type is string or number.
+function checkCellType(cell)
 {
-    let count = 0;
-
-    if (typeof nameColArr[i] === "string" || typeof nameColArr[i] === "number")
+    if (typeof cell === "string" || typeof cell === "number")
     {
-        console.log("true " + typeof nameColArr[i] + " " + nameColArr[i]);
-        console.log(count++);
-        //return true;
+        return true;
     }
-    else 
+    else
     {
-        console.log("false " + typeof nameColArr[i] + " " + nameColArr[i]);
-        console.log(count++);
-        //return("Erno .catch not string");
+        console.log("false " + typeof cell + " " + cell);
+        return false;
     }
 }
-//checkCellType(FSB_SB);*/
 
 //This function copies every Project.xlsx column as an array into an array like so [[][][]]
 function readProject(project)
 {
+    if(flawHappened)
+    {
+        return Promise.reject("flawHappened");
+    }
     let readWorkbook = new Excel.Workbook();
     return readWorkbook.xlsx.readFile(project)
     .then(function()
@@ -70,19 +81,48 @@ function readProject(project)
         {
             let worksheet = readWorkbook.getWorksheet('Matten');
             let nameColArr = worksheet.getColumn(columnIndexArr[j]).values;
+            for(let k=0;k<nameColArr.length;k++)
+            {
+                if(k>3 && !checkCellType(nameColArr[k]))
+                {
+                    errorList.push("type error in "+project+" col "+j+", row "+k);
+                }
+            }
             arrOfProjectColumns.push(nameColArr);
         }
+
+        if(errorList.length>0)
+        {
+            //Here throw exception
+            /* for(let i=0;i<errorList.length;i++)
+            {
+                console.log(errorList[i]);
+            }*/
+            flawHappened=1;
+            console.log("readProject failed");
+            throw "readProject failed in "+project;
+        }
         //console.log(arrOfProjectColumns);
-    })
+    }).catch((error)=>handleError(error))
 }
 
 //Writes xlsx - copies Project.xlsx + unit price column + quantity based price column + final price.
 function mergedResult(project, result)
 {
     console.log("reading project file");
+    if(flawHappened)
+    {
+        return Promise.reject("flawHappened");
+    }
+
     return readProject(project)
     .then(function()
     {
+        if(flawHappened)
+        {
+            console.log("flawHappened, skip result writing");
+            return;
+        }
         let mergeWorkbook = new Excel.Workbook();
         let mergeWorksheet = mergeWorkbook.addWorksheet('Matten');
 
@@ -122,7 +162,7 @@ function mergedResult(project, result)
         return mergeWorkbook.xlsx.writeFile(result)
         .then(function()
         {
-            console.log("result file written");
+            console.log("result file written "+flawHappened);
             /*console.log(mergeWorksheet.getColumn(columnIndexArr1[1]).values);
             console.log(mergeWorksheet.getColumn(columnIndexArr2[0]).values);
             console.log(mergeWorksheet.getColumn(columnIndexArr2[1]).values);
@@ -134,9 +174,14 @@ function mergedResult(project, result)
 //This Function creates id-s based on FSB/SB.xlsx files and assigns corresponding unit prices.
 function pricelistReader(FSB_SB, codeStart) 
 {
+    if(flawHappened)
+    {
+        return Promise.reject("flawHappened");
+    }
+
     let workbook = new Excel.Workbook();
     let countFSB_SB = 0;
-    return (workbook.xlsx.readFile(FSB_SB)
+    return ((workbook.xlsx.readFile(FSB_SB)
     .then(function()
     {
         console.log("pricelistReader: " + FSB_SB);
@@ -157,17 +202,38 @@ function pricelistReader(FSB_SB, codeStart)
             let oneLine = readWorksheet.getRow(i).values;
             for (let j = 2; j < mainRowArr.length-1; j++) 
             {
+                if(!checkCellType(mainRowArr[j]))
+                {
+                    errorList.push("type error in "+FSB_SB+" at row "+j);
+                }
+                if(!checkCellType(mainColumnArr[i]))
+                {
+                    errorList.push("type error in "+FSB_SB+" at column "+i);
+                }
+                if(!checkCellType(oneLine[j]))
+                {
+                    errorList.push("type error in "+FSB_SB+" at cell value "+oneLine[j]);
+                }
                 countFSB_SB = countFSB_SB + 1;
                 let euro = oneLine[j];
                 let productid = (codeStart + mainRowArr[j] + "." + mainColumnArr[i] + ".00");
-                checkId(productid);
+                if(!checkId(productid))
+                {
+                    errorList.push("error in "+FSB_SB+" at productid "+productid);
+                }
                 idsArrFSB_SB.push({productid, euro});
                 //console.log({productid, euro});
                 //console.log(countFSB_SB);
             }
         }
-        //Somewhere here call check type function.
-    }))
+        if(errorList.length>0)
+        {
+            //Here throw exception
+            //return Promise.reject("pricelistReader failed in "+FSB_SB);
+            flawHappened=1;
+            throw "pricelistReader failed in "+FSB_SB;
+        }
+    }).catch(error=>handleError(error))))
 }
 
 //This function calls the above function with two different parameters (FSB + SB).
@@ -175,13 +241,14 @@ function readFSB_SB(FSB, SB)
 {
     console.log('reading FSB and SB');
     return pricelistReader(FSB, codeStart1)
-    .then(pricelistReader(SB, codeStart2));
+    .then(pricelistReader(SB, codeStart2))
+    .catch((error)=>handleError(error));
 }
-
 
 function project(FSB, SB, project)
 {
     console.log('reading Project.xlsx');
+    Init();
     let workbook = new Excel.Workbook();
 
     return readFSB_SB(FSB, SB)
@@ -199,9 +266,24 @@ function project(FSB, SB, project)
                 var value = quantityArr[i];
                 idsAndQuantityArr.push({id, value});
                 
-                checkId(id);
+                if(!checkCellType(value))
+                {
+                    errorList.push("type error in "+project+" at quantity row "+i);
+                }
+                if(!checkId(id))
+                {
+                    errorList.push("error in " +project+" at "+id);
+                }
                 //Stores id-s and quantities in an object.
             }
+
+            if(errorList.length>0)
+            {
+                //Here throw exception
+                flawHappened=1;
+                console.log("project failed");
+                throw "project reader failed in "+project;
+            }            
             //console.log('idsAndQuantityArr.length: '+idsAndQuantityArr.length);
 
             //Looks for Project.xlsx id-s in the array based on FSB/SB.xlsx.
@@ -225,7 +307,6 @@ function project(FSB, SB, project)
             //console.log("osszes adat: " + arrOfAllElements);
 
             //Writes out the sum of fullPrices. This is the final price that the client should pay.
-            //console.log('Total price');
             let sumFullPrice = 0;
 
             for (let i = 0; i < arrOfAllElements.length; i++)
@@ -234,9 +315,32 @@ function project(FSB, SB, project)
             }
             sum.push(sumFullPrice.toFixed(3));
             console.log("Total Preis: " + sum + " €");
-        })
+        }).catch((error)=>handleError(error))
     )
 }
 
+/*
 project("FSB.xlsx", "SB.xlsx", "Project.xlsx")
-.then(mergedResult("Project.xlsx", "Result.xlsx"));
+.then(mergedResult("Project.xlsx", "Result.xlsx"))
+.catch(function(error) {
+    console.log("catch: "+error);
+    for(let i=0;i<errorList.length;i++)
+    {
+        console.log(errorList[i]);
+    }
+  });*/
+
+function handleError(error)
+{
+    console.log("!!!!!!!!! catch: "+error);
+    for(let i=0;i<errorList.length;i++)
+    {
+        console.log(errorList[i]);
+    }
+    flawHappened=1;
+}
+
+project("FSB.xlsx", "SB.xlsx", "Project_test_failed.xlsx")
+.then(mergedResult("Project_test_failed.xlsx", "Result.xlsx"))
+.catch((error)=>handleError(error));
+  
